@@ -4,3 +4,6 @@ xcuserdata
 Podfile.lock
 Pods
 .DS_Store
+build/
+DerivedData/
+*.xcuserstate

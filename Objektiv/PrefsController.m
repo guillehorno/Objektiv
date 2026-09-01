@@ -8,11 +8,10 @@
 
 #import "PrefsController.h"
 #import "Constants.h"
-#import <MASShortcut/MASShortcut.h>
+#import <MASShortcut/Shortcut.h>
 
 @interface PrefsController ()
 {
-    @private
     NSUserDefaults *defaults;
 }
 @end
@@ -37,39 +36,42 @@
 
 #pragma mark - UI methods
 
-- (void) showPreferences
+- (void)showPreferences
 {
-    //[self initUI];
     [self.window makeKeyAndOrderFront:NSApp];
-    [NSApp activateIgnoringOtherApps:YES];
+    if (@available(macOS 14.0, *)) {
+        [NSApp activate];
+    } else {
+        [NSApp activateIgnoringOtherApps:YES];
+    }
 }
 
-- (void) initUI
+- (void)initUI
 {
-    self.autoHideIcon.state = [defaults boolForKey:PrefAutoHideIcon] ? NSOnState : NSOffState;
-    self.startAtLogin.state = [defaults boolForKey:PrefStartAtLogin] ? NSOnState : NSOffState;
-    self.showNotifications.state = [defaults boolForKey:PrefShowNotifications] ? NSOnState : NSOffState;
+    self.autoHideIcon.state = [defaults boolForKey:PrefAutoHideIcon] ? NSControlStateValueOn : NSControlStateValueOff;
+    self.startAtLogin.state = [defaults boolForKey:PrefStartAtLogin] ? NSControlStateValueOn : NSControlStateValueOff;
+    self.showNotifications.state = [defaults boolForKey:PrefShowNotifications] ? NSControlStateValueOn : NSControlStateValueOff;
     self.hotkeyRecorder.associatedUserDefaultsKey = PrefHotkey;
 }
 
 #pragma mark - IBActions
 
-- (IBAction)toggleLoginItem: (id)sender
+- (IBAction)toggleLoginItem:(id)sender
 {
     NSLog(@"PrefsController :: toggleLoginItem");
-    [defaults setBool:(self.startAtLogin.state == NSOnState) forKey:PrefStartAtLogin];
+    [defaults setBool:(self.startAtLogin.state == NSControlStateValueOn) forKey:PrefStartAtLogin];
 }
 
-- (IBAction)toggleHideItem: (id)sender
+- (IBAction)toggleHideItem:(id)sender
 {
     NSLog(@"PrefsController :: toggleHideItem");
-    [defaults setBool:(self.autoHideIcon.state == NSOnState) forKey:PrefAutoHideIcon];
+    [defaults setBool:(self.autoHideIcon.state == NSControlStateValueOn) forKey:PrefAutoHideIcon];
 }
 
-- (IBAction)toggleShowNotifications: (id)sender;
+- (IBAction)toggleShowNotifications:(id)sender
 {
     NSLog(@"PrefsController :: showNotifications");
-    [defaults setBool:(self.showNotifications.state == NSOnState) forKey:PrefShowNotifications];
+    [defaults setBool:(self.showNotifications.state == NSControlStateValueOn) forKey:PrefShowNotifications];
 }
 
 @end

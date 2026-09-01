@@ -9,24 +9,23 @@
 #import "Browsers.h"
 #import "Constants.h"
 #import "NSWorkspace+Utils.h"
+#import "BrowserPattern+ObjC.h"
 
 @implementation Browsers {
     NSArray *_browsers;
-
-    // This internal blacklist of browsers is always hidden
     NSArray *internalBlacklist;
 }
 
-# pragma mark - initialization
+#pragma mark - initialization
 
-+ (Browsers*)sharedInstance
++ (Browsers *)sharedInstance
 {
     DEFINE_SHARED_INSTANCE_USING_BLOCK(^{
         return [[self alloc] init];
     });
 }
 
--(id)init
+- (id)init
 {
     self = [super init];
 
@@ -36,27 +35,29 @@
     return self;
 }
 
-# pragma mark - static properties
+#pragma mark - static properties
 
-+ (NSArray*) browsers
++ (NSArray *)browsers
 {
     return [[Browsers sharedInstance] browsers];
 }
 
-+ (NSArray*) validBrowsers
++ (NSArray *)validBrowsers
 {
     return [[Browsers sharedInstance] validBrowsers];
 }
 
-# pragma mark - instance properties
+#pragma mark - instance properties
 
-- (NSArray*) browsers
+- (NSArray *)browsers
 {
-    if (![_browsers count]) { [self findBrowsers]; }
+    if (![_browsers count]) {
+        [self findBrowsers];
+    }
     return _browsers;
 }
 
-- (NSArray*) validBrowsers
+- (NSArray *)validBrowsers
 {
     return [self.browsers filteredArrayUsingPredicate:
             [NSPredicate predicateWithBlock:^BOOL(id evaluatedObject, NSDictionary *bindings) {
@@ -65,39 +66,47 @@
     }]];
 }
 
-- (NSString*) defaultBrowserIdentifier
+- (NSString *)defaultBrowserIdentifier
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    return [defaults valueForKey:PrefSelectedBrowser];
-    
+    NSString *identifier = [defaults stringForKey:PrefSelectedBrowser];
+    if (identifier.length == 0) {
+        return @"com.apple.Safari";
+    }
+    return identifier;
 }
 
-- (NSString*) systemDefaultBrowser
+- (NSString *)systemDefaultBrowser
 {
     return [[NSWorkspace sharedWorkspace] defaultBrowserIdentifier];
 }
 
-- (void) setDefaultBrowserIdentifier:(NSString *)defaultBrowserIdentifier
+- (void)setDefaultBrowserIdentifier:(NSString *)defaultBrowserIdentifier
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setValue:defaultBrowserIdentifier forKey:PrefSelectedBrowser];
 }
 
-- (void) setOurselvesAsDefaultBrowser
+- (void)setOurselvesAsDefaultBrowser
 {
     [[NSWorkspace sharedWorkspace] setDefaultBrowserWithIdentifier:[[NSBundle mainBundle] bundleIdentifier]];
 }
 
-# pragma mark - Public methods
+#pragma mark - Public methods
 
-- (void) findBrowsersAsync
+- (void)findBrowsersAsync
 {
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+    dispatch_async(dispatch_get_main_queue(), ^{
         [self findBrowsers];
     });
 }
 
-- (void) findBrowsers
+- (void)findBrowsers
+{
+    _browsers = [self collectBrowsers];
+}
+
+- (NSArray *)collectBrowsers
 {
     NSLog(@"Find browsers");
     NSFileManager *defaultFileManager = [NSFileManager defaultManager];
@@ -105,21 +114,20 @@
     NSArray *identifiers = [sharedWorkspace installedBrowserIdentifiers];
 
     identifiers = [identifiers filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id browserId, NSDictionary *bindings) {
-        return ![self doesString:browserId matchPatternsInArray:internalBlacklist];
+        return ![BrowserPattern identifier:browserId matchesPatterns:self->internalBlacklist];
     }]];
 
     NSString *defaultBrowser = [self defaultBrowserIdentifier];
     NSMutableArray *allBrowsers = [[NSMutableArray alloc] initWithCapacity:identifiers.count];
 
-    for (int i = 0; i < identifiers.count; i++) {
-        NSString *browser = identifiers[i];
-
-        if (!browser) {
-            NSLog(@"Invalid application identifier: position %d of %@", i, identifiers);
+    for (NSString *browser in identifiers) {
+        if (![browser isKindOfClass:[NSString class]] || browser.length == 0) {
+            NSLog(@"Invalid application identifier: %@", browser);
             continue;
         }
 
-        NSString *browserPath = [sharedWorkspace absolutePathForAppBundleWithIdentifier:browser];
+        NSURL *browserURL = [sharedWorkspace URLForApplicationWithBundleIdentifier:browser];
+        NSString *browserPath = browserURL.path;
         if (!browserPath) {
             NSLog(@"Can't find path of browser: %@", browser);
             continue;
@@ -127,7 +135,7 @@
 
         NSString *browserName = [defaultFileManager displayNameAtPath:browserPath];
         if (!browserName) {
-            NSLog(@"Can't find path of browser: %@", browser);
+            NSLog(@"Can't find name of browser: %@", browser);
             continue;
         }
 
@@ -137,56 +145,54 @@
         [allBrowsers addObject:item];
     }
 
-    _browsers = [allBrowsers sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
-
+    return [allBrowsers sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
 }
 
-- (BOOL) isHidden:(NSString*) browserIdentifier
+- (BOOL)isHidden:(NSString *)browserIdentifier
 {
-    if (!browserIdentifier) return NO;
+    if (!browserIdentifier) {
+        return NO;
+    }
 
     NSArray *prefsHidden = [[NSUserDefaults standardUserDefaults] valueForKey:PrefBlacklist];
-    return [self doesString:browserIdentifier matchPatternsInArray:prefsHidden];
+    return [BrowserPattern identifier:browserIdentifier matchesPatterns:prefsHidden];
 }
 
-- (void) hideABrowser:sender
+- (void)hideABrowser:(id)sender
 {
     NSString *identifier = [sender representedObject];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSMutableArray *prefsHidden = [[defaults valueForKey:PrefBlacklist] mutableCopy];
+    if (!prefsHidden) {
+        prefsHidden = [NSMutableArray array];
+    }
     [prefsHidden addObject:identifier];
     [defaults setValue:prefsHidden forKey:PrefBlacklist];
 
     [self findBrowsersAsync];
 }
 
-- (void) unhideABrowser:sender
+- (void)unhideABrowser:(id)sender
 {
     NSString *identifier = [sender representedObject];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSMutableArray *prefsHidden = [[defaults valueForKey:PrefBlacklist] mutableCopy];
+    if (!prefsHidden) {
+        return;
+    }
 
     NSUInteger index = [prefsHidden indexOfObjectPassingTest:^BOOL(id hiddenIdentifer, NSUInteger idx, BOOL *stop) {
         return [identifier rangeOfString:hiddenIdentifer].location != NSNotFound;
     }];
 
-    if (index == NSNotFound) { return; }
+    if (index == NSNotFound) {
+        return;
+    }
 
     [prefsHidden removeObjectAtIndex:index];
     [defaults setValue:prefsHidden forKey:PrefBlacklist];
 
     [self findBrowsersAsync];
-}
-
-#pragma mark - internal methods
-
-- (BOOL) doesString: (NSString*) targetString matchPatternsInArray:(NSArray*) array
-{
-    NSUInteger index = [array indexOfObjectPassingTest:^BOOL(id currentPattern, NSUInteger idx, BOOL *stop) {
-        return [targetString rangeOfString:currentPattern].location != NSNotFound;
-    }];
-
-    return index != NSNotFound;
 }
 
 @end

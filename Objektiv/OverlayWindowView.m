@@ -24,16 +24,16 @@ const NSUInteger BOX_PADDING = 16;
 
 #pragma mark - properties
 @synthesize fillColor = _fillColor;
--(NSColor *)fillColor
+- (NSColor *)fillColor
 {
     if (!_fillColor) {
-        _fillColor = [NSColor colorWithCalibratedRed:0xFF green:0xFF blue:0xFF alpha:0.8];
+        _fillColor = [[NSColor whiteColor] colorWithAlphaComponent:0.8];
     }
     return _fillColor;
 }
 
 @synthesize strokeColor = _strokeColor;
--(NSColor *)strokeColor
+- (NSColor *)strokeColor
 {
     if (!_strokeColor) {
         _strokeColor = [self colorWithRed:0 green:0x66 blue:0xBB alpha:1];
@@ -59,7 +59,6 @@ const NSUInteger BOX_PADDING = 16;
     return self;
 }
 
-// Draws the semi-transparent background for the overlay panel
 - (void)drawRect:(NSRect)dirtyRect
 {
     dirtyRect = CGRectInset(dirtyRect, 0.5, 0.5);
@@ -72,31 +71,31 @@ const NSUInteger BOX_PADDING = 16;
     [path stroke];
 }
 
-# pragma mark - Actions
-- (void) buttonClicked:sender
+#pragma mark - Actions
+- (void)buttonClicked:(id)sender
 {
     NSButton *button = sender;
 
     [self.window orderOut:nil];
     [self.window close];
 
-    [appDelegate selectABrowser: button.cell];
+    [appDelegate selectABrowser:button.cell];
 }
 
-# pragma mark - Internals & Business Logic
+#pragma mark - Internals & Business Logic
 
-// Adds buttons for browser icons in a 9-column wide grid.
-// The first 9 will have hotkeys associated with them (numbers 1-9).
-- (NSSize)addBrowsers:(NSArray*)browsers
+- (NSSize)addBrowsers:(NSArray *)browsers
 {
     NSRect itemRect = NSMakeRect(BOX_PADDING, BOX_PADDING, ICON_SIZE + H_PADDING, ICON_SIZE + TEXT_HEIGHT);
     NSRect buttonRect = CGRectInset(itemRect, H_PADDING / 2, 0);
     NSUInteger width = itemRect.size.width, height = itemRect.size.height;
 
     NSUInteger maxRow = browsers.count / 9, maxColumn = browsers.count > 9 ? 9 : browsers.count;
-    if((browsers.count % 9) == 0) maxRow--;
+    if ((browsers.count % 9) == 0) {
+        maxRow--;
+    }
     NSUInteger row = maxRow, column = 0;
-    for (int i = 0; i < browsers.count; i++) {
+    for (NSUInteger i = 0; i < browsers.count; i++) {
         BrowserItem *browser = browsers[i];
 
         NSRect offset = CGRectOffset(buttonRect, width * column, height * row);
@@ -117,12 +116,12 @@ const NSUInteger BOX_PADDING = 16;
     return size;
 }
 
--(NSButton*)buttonForBrowser:(BrowserItem*)browser atPosition:(NSUInteger)position withFrame:(NSRect)frame
+- (NSButton *)buttonForBrowser:(BrowserItem *)browser atPosition:(NSUInteger)position withFrame:(NSRect)frame
 {
     NSButton *button = [[NSButton alloc] initWithFrame:frame];
 
     button.image = [self imageForBrowser:browser withBadge:position + 1];
-    button.keyEquivalent = [NSString stringWithFormat:@"%ld", position + 1];
+    button.keyEquivalent = [NSString stringWithFormat:@"%ld", (long)(position + 1)];
     button.attributedTitle = [self titleForButton:browser.name inColor:self.strokeColor];
     button.target = self;
     button.action = @selector(buttonClicked:);
@@ -136,7 +135,7 @@ const NSUInteger BOX_PADDING = 16;
     [cell setBordered:NO];
     [cell setTransparent:NO];
     [cell setSelectable:NO];
-    [cell setButtonType:NSMomentaryPushInButton];
+    [cell setButtonType:NSButtonTypeMomentaryPushIn];
     cell.showsStateBy = NSPushInCellMask;
     cell.highlightsBy = NSContentsCellMask;
     cell.representedObject = browser.identifier;
@@ -144,55 +143,57 @@ const NSUInteger BOX_PADDING = 16;
     return button;
 }
 
--(NSImage*) imageForBrowser:(BrowserItem*)browser withBadge:(NSUInteger)position
+- (NSImage *)imageForBrowser:(BrowserItem *)browser withBadge:(NSUInteger)position
 {
-
-    NSImage *image = [[ImageUtils fullSizeIconForAppId:browser.identifier
-                                             withSize:NSMakeSize(ICON_SIZE, ICON_SIZE)] copy];
-
-    if (browser.isDefault)
-    {
-        [image lockFocus];
-        NSImage *selectionImage = [NSImage imageNamed:NSImageNameMenuOnStateTemplate];
-        selectionImage = [ImageUtils tintInputImage:selectionImage toColor:self.strokeColor];
-        [selectionImage drawAtPoint:CGPointZero fromRect:CGRectZero operation:NSCompositeHighlight fraction:1];
-        [image unlockFocus];
+    NSImage *baseImage = [[ImageUtils fullSizeIconForAppId:browser.identifier
+                                                 withSize:NSMakeSize(ICON_SIZE, ICON_SIZE)] copy];
+    if (!baseImage) {
+        return nil;
     }
 
-    if (position > 9 || browser.isDefault) return image;
+    BOOL showBadge = !(position > 9 || browser.isDefault);
+    NSImage *selectionImage = nil;
+    if (browser.isDefault) {
+        selectionImage = [NSImage imageNamed:NSImageNameMenuOnStateTemplate];
+        selectionImage = [ImageUtils tintInputImage:selectionImage toColor:self.strokeColor];
+    }
 
-    NSString *badge = [NSString stringWithFormat:@"%ld", position];
-    [image lockFocus];
+    NSColor *stroke = self.strokeColor;
+    NSString *badge = showBadge ? [NSString stringWithFormat:@"%ld", (long)position] : nil;
 
-    NSRect rect = NSMakeRect(0, 0, 20, 20);
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:4 yRadius:4];
-    [self.strokeColor set];
-    [path fill];
+    return [NSImage imageWithSize:baseImage.size flipped:NO drawingHandler:^BOOL(NSRect dstRect) {
+        [baseImage drawInRect:dstRect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
 
-    [badge drawInRect:CGRectInset(rect, 7, 2)
-       withAttributes:@{NSForegroundColorAttributeName : [NSColor whiteColor]}];
+        if (selectionImage) {
+            [selectionImage drawAtPoint:NSZeroPoint fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+        }
 
-    [image unlockFocus];
-    return image;
+        if (badge) {
+            NSRect rect = NSMakeRect(0, 0, 20, 20);
+            NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:4 yRadius:4];
+            [stroke set];
+            [path fill];
+            [badge drawInRect:CGRectInset(rect, 7, 2)
+               withAttributes:@{NSForegroundColorAttributeName : [NSColor whiteColor]}];
+        }
+        return YES;
+    }];
 }
 
-
--(NSAttributedString*) titleForButton:(NSString*) plainTitle inColor:(NSColor*) color
+- (NSAttributedString *)titleForButton:(NSString *)plainTitle inColor:(NSColor *)color
 {
-    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:plainTitle];
+    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:plainTitle ?: @""];
 
     NSRange range = NSMakeRange(0, title.length);
+    NSFont *font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize] + 2];
 
-    NSFont *font = [NSFont labelFontOfSize:[NSFont labelFontSize] + 2];
-    font = [[NSFontManager sharedFontManager] convertFont:font toHaveTrait:NSFontBoldTrait];
-    
     [title addAttribute:NSForegroundColorAttributeName
                   value:color
                   range:range];
     [title addAttribute:NSFontAttributeName
                   value:font
                   range:range];
-    [title setAlignment:NSCenterTextAlignment range:range];
+    [title setAlignment:NSTextAlignmentCenter range:range];
     [title fixAttributesInRange:range];
 
     return [self truncateString:title toWidth:ICON_SIZE];
@@ -200,27 +201,23 @@ const NSUInteger BOX_PADDING = 16;
 
 #pragma mark - Utilities
 
-- (NSAttributedString *)truncateString:(NSAttributedString*)attributedString toWidth:(NSUInteger)width
+- (NSAttributedString *)truncateString:(NSAttributedString *)attributedString toWidth:(NSUInteger)width
 {
-	NSAttributedString *result = attributedString;
-	if (result.size.width > width)
-	{
-		NSMutableAttributedString *newString = [[NSMutableAttributedString alloc] initWithAttributedString:result];
-		while ([newString size].width > width)
-		{
-			NSRange range = NSMakeRange(newString.length - 2, 2);
-			[newString replaceCharactersInRange:range withString:@"…"];
-		}
-		result = newString;
-	}
-	return result;
+    NSAttributedString *result = attributedString;
+    if (result.size.width > width) {
+        NSMutableAttributedString *newString = [[NSMutableAttributedString alloc] initWithAttributedString:result];
+        while ([newString size].width > width && newString.length >= 2) {
+            NSRange range = NSMakeRange(newString.length - 2, 2);
+            [newString replaceCharactersInRange:range withString:@"…"];
+        }
+        result = newString;
+    }
+    return result;
 }
 
-- (NSColor*) colorWithRed:(NSUInteger)red green:(NSUInteger)green blue:(NSUInteger)blue alpha:(CGFloat)alpha
+- (NSColor *)colorWithRed:(NSUInteger)red green:(NSUInteger)green blue:(NSUInteger)blue alpha:(CGFloat)alpha
 {
-    NSColorSpace *sRGB = [NSColorSpace sRGBColorSpace];
-    CGFloat components[4] = { red/255.0f, green/255.0f, blue/255.0f, alpha };
-    NSColor *color = [NSColor colorWithColorSpace:sRGB components:(CGFloat*)&components count:4];
-    return color;
+    return [NSColor colorWithRed:red / 255.0 green:green / 255.0 blue:blue / 255.0 alpha:alpha];
 }
+
 @end

@@ -7,7 +7,6 @@
 //
 
 #import "AppDelegate.h"
-#import "BrowserItem.h"
 #import "Browsers.h"
 #import "Constants.h"
 #import "PrefsController.h"
@@ -15,27 +14,24 @@
 #import "BrowsersMenu.h"
 #import "OverlayWindow.h"
 #import "ZeroKitUtilities.h"
+#import "ApplicationFolderWatcher.h"
 #import <MASShortcut/Shortcut.h>
 #import "PFMoveApplication.h"
-#import <CDEvents.h>
-#import <Sparkle/Sparkle.h>
+#import <UserNotifications/UserNotifications.h>
+#import <CoreServices/CoreServices.h>
 
-@interface AppDelegate()
+@interface AppDelegate ()
 {
-    @private
     NSStatusItem *statusBarIcon;
     BrowsersMenu *browserMenu;
     NSUserDefaults *defaults;
-    NSWorkspace *sharedWorkspace;
     OverlayWindow *overlayWindow;
-    CDEvents *cdEvents;
+    ApplicationFolderWatcher *folderWatcher;
     NSString *_defaultBrowser;
 }
 @end
 
 @implementation AppDelegate
-
-{} // TODO Figure out why the first pragma mark requires this empty block to show up
 
 #pragma mark - NSApplicationDelegate
 
@@ -50,22 +46,18 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
-
     PFMoveToApplicationsFolderIfNecessary();
 
     NSLog(@"applicationDidFinishLaunching");
 
-//    [[SUUpdater sharedUpdater] checkForUpdatesInBackground];
-
     self.prefsController = [[PrefsController alloc] initWithWindowNibName:@"PrefsController"];
-    sharedWorkspace = [NSWorkspace sharedWorkspace];
 
     browserMenu = [[BrowsersMenu alloc] init];
 
     NSLog(@"Setting defaults");
     [ZeroKitUtilities registerDefaultsForBundle:[NSBundle mainBundle]];
     defaults = [NSUserDefaults standardUserDefaults];
-    
+
     [self displayAreWeDefaultMsg];
 
     [defaults addObserver:self
@@ -76,11 +68,11 @@
                forKeyPath:PrefStartAtLogin
                   options:NSKeyValueObservingOptionNew
                   context:NULL];
-    
+
     [[MASShortcutBinder sharedBinder] bindShortcutWithDefaultsKey:PrefHotkey toAction:^{
         [self hotkeyTriggered];
-     }];
-    
+    }];
+
     [[Browsers sharedInstance] findBrowsers];
     [self showAndHideIcon:nil];
 
@@ -91,21 +83,26 @@
     NSLog(@"applicationDidFinishLaunching :: finish");
 }
 
-- (void)watchApplicationsFolder
+- (void)dealloc
 {
-    // Watch the /Applications & ~/Applications directories for a change
-    NSArray *urls = @[
-        [NSURL URLWithString:@"/Applications"],
-        [NSURL URLWithString:[NSHomeDirectoryForUser(NSUserName()) stringByAppendingString:@"/Applications"]]
-    ];
-
-    cdEvents = [[CDEvents alloc] initWithURLs:urls block:^(CDEvents *watcher, CDEvent *event) {
-        [[Browsers sharedInstance] findBrowsersAsync];
-    }];
-    cdEvents.ignoreEventsFromSubDirectories = YES;
+    [defaults removeObserver:self forKeyPath:PrefAutoHideIcon];
+    [defaults removeObserver:self forKeyPath:PrefStartAtLogin];
 }
 
-- (BOOL)applicationShouldHandleReopen: (NSApplication *)application hasVisibleWindows: (BOOL)visibleWindows
+- (void)watchApplicationsFolder
+{
+    NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithObject:@"/Applications"];
+    NSString *userApplications = [NSHomeDirectory() stringByAppendingPathComponent:@"Applications"];
+    if (userApplications) {
+        [paths addObject:userApplications];
+    }
+
+    folderWatcher = [[ApplicationFolderWatcher alloc] initWithDirectories:paths handler:^{
+        [[Browsers sharedInstance] findBrowsersAsync];
+    }];
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)application hasVisibleWindows:(BOOL)visibleWindows
 {
     [self showAndHideIcon:nil];
     return YES;
@@ -113,62 +110,55 @@
 
 #pragma mark - NSKeyValueObserving
 
--(void)observeValueForKeyPath:(NSString *)keyPath
-                     ofObject:(id)object
-                       change:(NSDictionary *)change
-                      context:(void *)context
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary *)change
+                       context:(void *)context
 {
-    if ([keyPath isEqualToString:PrefAutoHideIcon])
-    {
+    if ([keyPath isEqualToString:PrefAutoHideIcon]) {
         [self showAndHideIcon:nil];
     }
-    if ([keyPath isEqualToString:PrefStartAtLogin])
-    {
+    if ([keyPath isEqualToString:PrefStartAtLogin]) {
         [self toggleLoginItem];
     }
 }
 
 #pragma mark - "Business" Logic
 
-- (NSArray*) browsers
+- (NSArray *)browsers
 {
     return [Browsers browsers];
 }
 
-- (void) selectABrowser:sender
+- (void)selectABrowser:(id)sender
 {
     NSString *newDefaultBrowser = [sender respondsToSelector:@selector(representedObject)]
         ? [sender representedObject]
-        :sender;
+        : sender;
 
     NSLog(@"Selecting a browser: %@", newDefaultBrowser);
     [Browsers sharedInstance].defaultBrowserIdentifier = newDefaultBrowser;
     [self performSelector:@selector(updateStatusBarIcon) withObject:nil afterDelay:0.1];
-    
-    if ([defaults boolForKey:PrefShowNotifications])
-    {
+
+    if ([defaults boolForKey:PrefShowNotifications]) {
         [self showNotification:newDefaultBrowser];
     }
 }
 
-- (void) toggleLoginItem
+- (void)toggleLoginItem
 {
-    if ([defaults boolForKey:PrefStartAtLogin])
-    {
+    if ([defaults boolForKey:PrefStartAtLogin]) {
         [ZeroKitUtilities enableLoginItemForBundle:[NSBundle mainBundle]];
-    }
-    else
-    {
+    } else {
         [ZeroKitUtilities disableLoginItemForBundle:[NSBundle mainBundle]];
     }
 }
 
 #pragma mark - UI
 
-
-- (void) hotkeyTriggered
+- (void)hotkeyTriggered
 {
-    NSLog(@"@Hotkey triggered");
+    NSLog(@"Hotkey triggered");
     if (overlayWindow.isVisible) {
         [overlayWindow close];
         return;
@@ -177,94 +167,116 @@
     [self showAndHideIcon:nil];
 }
 
-- (void) createStatusBarIcon
+- (void)createStatusBarIcon
 {
     NSLog(@"createStatusBarIcon");
-    if (statusBarIcon != nil) return;
+    if (statusBarIcon != nil) {
+        return;
+    }
     NSStatusBar *statusBar = [NSStatusBar systemStatusBar];
 
     statusBarIcon = [statusBar statusItemWithLength:NSVariableStatusItemLength];
-    statusBarIcon.toolTip = AppDescription;
+    statusBarIcon.button.toolTip = AppDescription;
     [self updateStatusBarIcon];
-    statusBarIcon.highlightMode = YES;
-
     statusBarIcon.menu = browserMenu;
 }
 
-- (void) updateStatusBarIcon;
+- (void)updateStatusBarIcon
 {
     NSString *identifier = [Browsers sharedInstance].defaultBrowserIdentifier;
-    statusBarIcon.image = [ImageUtils statusBarIconForAppId:identifier];
+    statusBarIcon.button.image = [ImageUtils statusBarIconForAppId:identifier];
+    statusBarIcon.button.image.template = NO;
 
-    if ([identifier isEqualToString:_defaultBrowser]) return;
+    if ([identifier isEqualToString:_defaultBrowser]) {
+        return;
+    }
     _defaultBrowser = identifier;
     [[Browsers sharedInstance] findBrowsersAsync];
 }
 
-- (void) destroyStatusBarIcon
+- (void)destroyStatusBarIcon
 {
     NSLog(@"destroyStatusBarIcon");
-    if (![defaults boolForKey:PrefAutoHideIcon])
-    {
+    if (![defaults boolForKey:PrefAutoHideIcon]) {
         return;
     }
-    if (browserMenu.menuIsOpen)
-    {
+    if (browserMenu.menuIsOpen) {
         [self performSelector:@selector(destroyStatusBarIcon) withObject:nil afterDelay:10];
-    }
-    else
-    {
+    } else {
         [[statusBarIcon statusBar] removeStatusItem:statusBarIcon];
         statusBarIcon = nil;
     }
 }
 
-- (void) showAndHideIcon:(NSEvent*)hotKeyEvent
+- (void)showAndHideIcon:(NSEvent *)hotKeyEvent
 {
     NSLog(@"showAndHideIcon");
     [self createStatusBarIcon];
-    if ([defaults boolForKey:PrefAutoHideIcon])
-    {
+    if ([defaults boolForKey:PrefAutoHideIcon]) {
         [self performSelector:@selector(destroyStatusBarIcon) withObject:nil afterDelay:10];
     }
 }
 
-- (void) showAbout
+- (void)showAbout
 {
     [[NSApplication sharedApplication] orderFrontStandardAboutPanel:nil];
 }
 
-- (void) doQuit
+- (void)doQuit
 {
     [NSApp terminate:nil];
 }
 
 #pragma mark - Utilities
 
-- (void) showNotification:(NSString *)browserIdentifier
+- (void)activateApp
 {
-    NSString *browserPath = [sharedWorkspace absolutePathForAppBundleWithIdentifier:browserIdentifier];
-    NSString *browserName = [[NSFileManager defaultManager] displayNameAtPath:browserPath];
-    NSUserNotification *notification = [[NSUserNotification alloc] init];
-    notification.title = [NSString stringWithFormat:NotificationTitle, browserName];
-    notification.informativeText = [NSString stringWithFormat:NotificationText, browserName, AppName];
-    NSUserNotificationCenter* center = [NSUserNotificationCenter defaultUserNotificationCenter];
-    center.delegate = self;
-    [center deliverNotification:notification];
+    if (@available(macOS 14.0, *)) {
+        [NSApp activate];
+    } else {
+        [NSApp activateIgnoringOtherApps:YES];
+    }
 }
 
-- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification
+- (void)showNotification:(NSString *)browserIdentifier
 {
-    return YES;
+    NSURL *browserURL = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:browserIdentifier];
+    NSString *browserName = browserURL ? [[NSFileManager defaultManager] displayNameAtPath:browserURL.path] : browserIdentifier;
+
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    UNAuthorizationOptions options = UNAuthorizationOptionAlert | UNAuthorizationOptionSound;
+    [center requestAuthorizationWithOptions:options completionHandler:^(BOOL granted, NSError *error) {
+        if (!granted) {
+            if (error) {
+                NSLog(@"Notification authorization failed: %@", error);
+            }
+            return;
+        }
+
+        UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+        content.title = [NSString stringWithFormat:NotificationTitle, browserName];
+        content.body = [NSString stringWithFormat:NotificationText, browserName, AppName];
+
+        UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:[[NSUUID UUID] UUIDString]
+                                                                              content:content
+                                                                              trigger:nil];
+        [center addNotificationRequest:request withCompletionHandler:^(NSError *addError) {
+            if (addError) {
+                NSLog(@"Failed to deliver notification: %@", addError);
+            }
+        }];
+    }];
 }
 
--(void)displayAreWeDefaultMsg
+- (void)displayAreWeDefaultMsg
 {
-    if([defaults boolForKey:PrefAreWeDefault]) return;
-    if([[[NSBundle mainBundle] bundleIdentifier] caseInsensitiveCompare:[[Browsers sharedInstance] systemDefaultBrowser]] == NSOrderedSame) {
+    if ([defaults boolForKey:PrefAreWeDefault]) {
         return;
     }
-    
+    if ([[[NSBundle mainBundle] bundleIdentifier] caseInsensitiveCompare:[[Browsers sharedInstance] systemDefaultBrowser]] == NSOrderedSame) {
+        return;
+    }
+
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setShowsSuppressionButton:YES];
     [alert setMessageText:NSLocalizedString(@"Non Default Browser", @"Non Default Browser")];
@@ -272,12 +284,13 @@
     [alert addButtonWithTitle:NSLocalizedString(@"Set As Default", @"Set As Default")];
     NSButton *cancelButton = [alert addButtonWithTitle:NSLocalizedString(@"Cancel", @"Cancel")];
     [cancelButton setKeyEquivalent:@"\e"];
-    
+
+    [self activateApp];
     if ([alert runModal] == NSAlertFirstButtonReturn) {
         [[Browsers sharedInstance] setOurselvesAsDefaultBrowser];
     }
-    
-    if ([[alert suppressionButton] state] == NSOnState) {
+
+    if (alert.suppressionButton.state == NSControlStateValueOn) {
         NSLog(@"Suppress");
         [defaults setBool:YES forKey:PrefAreWeDefault];
     }
@@ -287,29 +300,57 @@
 
 - (BOOL)application:(NSApplication *)theApplication openFile:(NSString *)filename
 {
-    [self openWithBrowser:[NSString stringWithFormat:kLocalFileUri, filename]];
+    [self openURL:[NSURL fileURLWithPath:filename]];
     return YES;
 }
 
-- (void)getUrl:(NSAppleEventDescriptor *)event
-withReplyEvent:(NSAppleEventDescriptor *)replyEvent
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls
 {
-    [self openWithBrowser:[[event paramDescriptorForKeyword:keyDirectObject]
-                           stringValue]];
+    for (NSURL *url in urls) {
+        [self openURL:url];
+    }
 }
 
-- (void)openWithBrowser:(NSString*)location
+- (void)getUrl:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)replyEvent
 {
-    
-    NSArray *urls = [NSArray arrayWithObject:[NSURL URLWithString:location]];
-    
-    int options = NSWorkspaceLaunchAsync;
-    
-    [[NSWorkspace sharedWorkspace] openURLs: urls
-                    withAppBundleIdentifier: [[Browsers sharedInstance] defaultBrowserIdentifier]
-                                    options: options
-             additionalEventParamDescriptor: nil
-                          launchIdentifiers: nil];
+    NSString *location = [[event paramDescriptorForKeyword:keyDirectObject] stringValue];
+    if (location.length == 0) {
+        return;
+    }
+    NSURL *url = [NSURL URLWithString:location];
+    if (!url) {
+        url = [NSURL fileURLWithPath:location];
+    }
+    [self openURL:url];
+}
+
+- (void)openURL:(NSURL *)url
+{
+    if (!url) {
+        return;
+    }
+
+    NSString *identifier = [[Browsers sharedInstance] defaultBrowserIdentifier];
+    NSURL *appURL = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:identifier];
+    if (!appURL) {
+        NSLog(@"Can't find selected browser %@. Falling back to Safari.", identifier);
+        appURL = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:@"com.apple.Safari"];
+    }
+    if (!appURL) {
+        NSLog(@"Can't find a browser to open %@", url);
+        return;
+    }
+
+    NSWorkspaceOpenConfiguration *configuration = [NSWorkspaceOpenConfiguration configuration];
+    configuration.activates = YES;
+    [[NSWorkspace sharedWorkspace] openURLs:@[url]
+                       withApplicationAtURL:appURL
+                              configuration:configuration
+                          completionHandler:^(NSRunningApplication *app, NSError *error) {
+        if (error) {
+            NSLog(@"Failed to open %@ with %@: %@", url, identifier, error);
+        }
+    }];
 }
 
 @end

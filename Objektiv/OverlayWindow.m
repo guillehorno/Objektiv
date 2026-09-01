@@ -7,27 +7,24 @@
 //
 
 #import "OverlayWindow.h"
-#import "ImageUtils.h"
 #import "AppDelegate.h"
-#import "BrowserItem.h"
 #import "Browsers.h"
 #import "OverlayWindowView.h"
 #import <Carbon/Carbon.h>
+#import <QuartzCore/QuartzCore.h>
 
 @implementation OverlayWindow {
-
-    @private
     AppDelegate *appDelegate;
     NSArray *browsers;
 }
 
 #pragma mark - Initialization
 
--(id)init
+- (id)init
 {
     NSLog(@"Initializing OverlayWindow");
     self = [super initWithContentRect:CGRectZero
-                            styleMask:NSBorderlessWindowMask | NSNonactivatingPanelMask
+                            styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
                               backing:NSBackingStoreBuffered
                                 defer:NO];
 
@@ -46,28 +43,24 @@
 
 #pragma mark - NSWindow
 
--(void)awakeFromNib
+- (BOOL)canBecomeKeyWindow
 {
+    return YES;
 }
 
--(BOOL)canBecomeKeyWindow { return YES; }
-
--(void)keyDown:(NSEvent *)theEvent
+- (void)keyDown:(NSEvent *)theEvent
 {
-    if (theEvent.keyCode == kVK_Escape)
-    {
+    if (theEvent.keyCode == kVK_Escape) {
         [self orderOut:nil];
         [self close];
-    }
-    else
-    {
+    } else {
         [super keyDown:theEvent];
     }
 }
 
-# pragma mark - NSWindowDelegate
+#pragma mark - NSWindowDelegate
 
--(void)windowDidBecomeKey:(NSNotification *)notification
+- (void)windowDidBecomeKey:(NSNotification *)notification
 {
     NSLog(@"became key");
     browsers = [Browsers validBrowsers];
@@ -88,13 +81,12 @@
     [NSAnimationContext endGrouping];
 }
 
--(void)windowDidResignKey:(NSNotification *)notification
+- (void)windowDidResignKey:(NSNotification *)notification
 {
     browsers = nil;
     [self setContentView:nil];
     [self orderOut:nil];
     [self close];
 }
-
 
 @end

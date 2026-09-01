@@ -5,26 +5,15 @@
 
 #import <AppKit/AppKit.h>
 
-@interface NSWorkspace(CaminoDefaultBrowserAdditions)
+@interface NSWorkspace (CaminoDefaultBrowserAdditions)
 
-- (NSArray*)installedBrowserIdentifiers;    // sort order not specified
-- (NSString*)defaultBrowserIdentifier;
-- (NSURL*)defaultBrowserURL;
+- (NSArray<NSString *> *)installedBrowserIdentifiers;
+- (NSString *)defaultBrowserIdentifier;
+- (NSURL *)defaultBrowserURL;
 
-- (NSArray*)installedFeedViewerIdentifiers;
-- (NSString*)defaultFeedViewerIdentifier;
-- (NSURL*)defaultFeedViewerURL;
+- (void)setDefaultBrowserWithIdentifier:(NSString *)bundleID;
 
-- (void)setDefaultBrowserWithIdentifier:(NSString*)bundleID;
-- (void)setDefaultFeedViewerWithIdentifier:(NSString*)bundleID;
-
-- (NSURL*)urlOfApplicationWithIdentifier:(NSString*)bundleID;
-- (NSString*)identifierForBundle:(NSURL*)inBundleURL;
-- (NSString*)displayNameForFile:(NSURL*)inFileURL;
-
-// OS feature checks
-+ (NSString*)osVersionString;
-+ (BOOL)isLeopardOrHigher;
-+ (BOOL)isLionOrHigher;
+- (NSURL *)urlOfApplicationWithIdentifier:(NSString *)bundleID;
+- (NSString *)identifierForBundle:(NSURL *)inBundleURL;
 
 @end
