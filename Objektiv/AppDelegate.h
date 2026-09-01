@@ -9,13 +9,12 @@
 #import <Cocoa/Cocoa.h>
 #import "PrefsController.h"
 
+@interface AppDelegate : NSObject <NSApplicationDelegate>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, NSUserNotificationCenterDelegate>
+- (void)hotkeyTriggered;
+- (void)selectABrowser:(id)sender;
+- (void)updateStatusBarIcon;
 
-- (void) hotkeyTriggered;
-- (void) selectABrowser:sender;
-- (void) updateStatusBarIcon;
-
-@property PrefsController* prefsController;
+@property (strong) PrefsController *prefsController;
 
 @end

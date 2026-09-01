@@ -1,16 +1,39 @@
 Objektiv
 ========================================
 
-![Objektiv Logo][logo] Objektiv is a utility that lets you switch your
-default browser easily. You might find it useful if you're a web
+![Objektiv Logo][logo] Objektiv is a menu-bar utility that lets you switch
+your default browser instantly. You might find it useful if you are a web
 designer or use multiple browsers in your workflow.
+
+This fork is a **native Apple Silicon** port for current macOS. The last
+Intel-only release depended on Rosetta 2 (and an Intel Sparkle framework).
+Apple no longer supports that translation layer on the latest system, so this
+tree builds `arm64` only, targets **macOS 13 Ventura and later**, and uses
+current Launch Services, login-item, and notification APIs.
+
+Requirements
+----------------------------------------
+
+- An Apple Silicon Mac
+- macOS 13 or later
+- Xcode 15 or later to build from source
 
 Install
 ----------------------------------------
 
-The app works with Mac OS X 10.8 (Mountain Lion) onwards.
+1. Open `Objektiv.xcodeproj` (or `Objektiv.xcworkspace`) in Xcode on a Mac.
+2. Select the **Objektiv** scheme and an **Any Mac (Apple Silicon)** or your
+   connected Mac destination.
+3. Product → Build, then run or copy `Objektiv.app` to `/Applications`.
+4. Set Objektiv as your default web browser in
+   **System Settings → Desktop & Dock → Default web browser**.
 
-You can either **[download Objektiv][download]** or install it via homebrew: `brew install objektiv`
+Objektiv does not silently replace Safari/Chrome as the system default. It
+*is* the default browser, then forwards each link to whichever real browser
+you last selected in the menu bar or overlay.
+
+The old Homebrew cask (`brew install --cask objektiv`) shipped the Intel
+binary and is disabled. Use a local Xcode build from this repository instead.
 
 Features
 ----------------------------------------
@@ -23,21 +46,35 @@ Features
 
 ![Screenshot of the Objektiv overlay window](Objektiv/en.lproj/objektiv-overlay.png)
 
-Usage
-----------------------------------------
-Due to the recent changes in MacOS 10.10+, applications are now incapable of switching the user's default browser silently without a confirmation message. Please set Objektiv as your default browser in your System Prefences > General and everything will work as normal.
-
-Building & Running
+Building
 ----------------------------------------
 
-Objektiv requires [CocoaPods][] in order to be built.
+CocoaPods is no longer required. MASShortcut is vendored under
+`Vendor/MASShortcut`. Sparkle auto-update is removed (the original feed is
+gone, and the bundled framework was Intel-only).
 
-After cloning this repository, run:
+```bash
+# Portable checks (Linux or macOS)
+./scripts/verify.sh
 
-    $ pod install
+# On macOS with Xcode
+xcodebuild -scheme Objektiv -configuration Release -arch arm64 build
+xcodebuild -scheme Objektiv -configuration Debug test
+```
 
-in order to grab dependencies. Also, make sure that you open
-`Objektiv.xcworkspace`, not `Objektiv.xcodeproj`.
+If Gatekeeper blocks a local build, ad-hoc signing is already enabled
+(`CODE_SIGN_IDENTITY = "-"`). For distribution, sign with your Developer ID
+and notarize.
+
+Port notes
+----------------------------------------
+
+- Architecture: `arm64` only (no Rosetta)
+- Deployment target: macOS 13 (needed for `SMAppService` login items)
+- Browser discovery / default-handler APIs: `NSWorkspace` methods introduced
+  in macOS 12+
+- Notifications: UserNotifications
+- Application-folder watching: FSEvents (replaces CDEvents)
 
 Copyright & About
 ----------------------------------------
@@ -56,22 +93,15 @@ Contributors
 * [xrivatsan](https://github.com/xrivatsan), original developer
 * [Vorror](https://github.com/Vorror), major bugfixes and making the tool work with present-day macOS
 
-
 Credits
 ----------------------------------------
 
   - [ZeroKit][] by eczarny (MIT Licensed, portions of source used)
   - [MASShortcut][] by Vadim Shpakovski (BSD Licensed)
-  - [CDEvents][] by Aron Cedercrantz (MIT Licensed)
-  - [Sparkle][] by Andy Matuschak
   - [NSWorkspace+Utils][1] from Mozilla's Camino project (MPL)
 
   [logo]:        Objektiv/Objektiv.iconset/icon_128x128.png
-  [download]:    https://github.com/nthloop/Objektiv/releases
   [nth loop]:    http://nthloop.com
-  [CocoaPods]:   http://cocoapods.org/
   [ZeroKit]:     https://github.com/eczarny/zerokit
   [MASShortcut]: https://github.com/shpakovski/MASShortcut
-  [CDEvents]:    http://aron.cedercrantz.com/CDEvents/
-  [Sparkle]:     http://sparkle.andymatuschak.org/
   [1]:           http://hg.mozilla.org/camino/file/6d654a6d1cf4/src/extensions/NSWorkspace%2BUtils.h

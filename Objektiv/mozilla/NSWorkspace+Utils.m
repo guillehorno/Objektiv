@@ -4,159 +4,105 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #import "NSWorkspace+Utils.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-@implementation NSWorkspace(CaminoDefaultBrowserAdditions)
+@implementation NSWorkspace (CaminoDefaultBrowserAdditions)
 
-- (NSArray*)installedBrowserIdentifiers
+- (NSArray<NSString *> *)installedBrowserIdentifiers
 {
-  NSArray* apps = [(NSArray*)LSCopyAllHandlersForURLScheme(CFSTR("https")) autorelease];
+    NSURL *httpsURL = [NSURL URLWithString:@"https://example.com"];
+    NSArray<NSURL *> *appURLs = [self URLsForApplicationsToOpenURL:httpsURL];
+    NSMutableArray<NSString *> *identifiers = [NSMutableArray array];
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
 
-  // add the default if it isn't there
-  NSString* defaultHandler = [self defaultBrowserIdentifier];
-  if (defaultHandler && ([apps indexOfObject:defaultHandler] == NSNotFound))
-    apps = [apps arrayByAddingObject:defaultHandler];
-
-  return apps;
-}
-
-- (NSArray*)installedFeedViewerIdentifiers
-{
-  NSArray* apps = [(NSArray*)LSCopyAllHandlersForURLScheme(CFSTR("feed")) autorelease];
-
-  // add the default if it isn't there
-  NSString* defaultHandler = [self defaultFeedViewerIdentifier];
-  if (defaultHandler && ([apps indexOfObject:defaultHandler] == NSNotFound))
-    apps = [apps arrayByAddingObject:defaultHandler];
-
-  return apps;
-}
-
-- (NSString*)defaultBrowserIdentifier
-{
-  NSString* defaultBundleId = [(NSString*)LSCopyDefaultHandlerForURLScheme(CFSTR("http")) autorelease];
-  // Sometimes LaunchServices likes to pretend there's no default browser.
-  // If that happens, we'll assume it's probably Safari.
-  if (!defaultBundleId)
-    defaultBundleId = @"com.apple.safari";
-  return defaultBundleId;
-}
-
-- (NSString*)defaultFeedViewerIdentifier
-{
-  return [(NSString*)LSCopyDefaultHandlerForURLScheme(CFSTR("feed")) autorelease];
-}
-
-- (NSURL*)defaultBrowserURL
-{
-  NSString* defaultBundleId = [self defaultBrowserIdentifier];
-  if (defaultBundleId)
-    return [self urlOfApplicationWithIdentifier:defaultBundleId];
-  return nil;
-}
-
-- (NSURL*)defaultFeedViewerURL
-{
-  NSString* defaultBundleId = [self defaultFeedViewerIdentifier];
-  if (defaultBundleId)
-    return [self urlOfApplicationWithIdentifier:defaultBundleId];
-  return nil;
-}
-
-- (void)setDefaultBrowserWithIdentifier:(NSString*)bundleID
-{
-  LSSetDefaultHandlerForURLScheme(CFSTR("http"), (CFStringRef)bundleID);
-  LSSetDefaultHandlerForURLScheme(CFSTR("https"), (CFStringRef)bundleID);
-  LSSetDefaultRoleHandlerForContentType(kUTTypeHTML, kLSRolesViewer, (CFStringRef)bundleID);
-  LSSetDefaultRoleHandlerForContentType(kUTTypeURL, kLSRolesViewer, (CFStringRef)bundleID);
-}
-
-- (void)setDefaultFeedViewerWithIdentifier:(NSString*)bundleID
-{
-  LSSetDefaultHandlerForURLScheme(CFSTR("feed"), (CFStringRef)bundleID);
-}
-
-- (NSURL*)urlOfApplicationWithIdentifier:(NSString*)bundleID
-{
-  if (!bundleID)
-    return nil;
-  NSURL* appURL = nil;
-  if (LSFindApplicationForInfo(kLSUnknownCreator, (CFStringRef)bundleID, NULL, NULL, (CFURLRef*)&appURL) == noErr)
-    return [appURL autorelease];
-
-  return nil;
-}
-
-- (NSString*)identifierForBundle:(NSURL*)inBundleURL
-{
-  if (!inBundleURL) return nil;
-
-  NSBundle* tmpBundle = [NSBundle bundleWithPath:[[inBundleURL path] stringByStandardizingPath]];
-  if (tmpBundle)
-  {
-    NSString* tmpBundleID = [tmpBundle bundleIdentifier];
-    if (tmpBundleID && ([tmpBundleID length] > 0)) {
-      return tmpBundleID;
+    for (NSURL *appURL in appURLs) {
+        NSString *bundleID = [self identifierForBundle:appURL];
+        if (bundleID.length == 0 || [seen containsObject:bundleID]) {
+            continue;
+        }
+        [seen addObject:bundleID];
+        [identifiers addObject:bundleID];
     }
-  }
-  return nil;
+
+    NSString *defaultHandler = [self defaultBrowserIdentifier];
+    if (defaultHandler.length > 0 && ![seen containsObject:defaultHandler]) {
+        [identifiers addObject:defaultHandler];
+    }
+
+    return identifiers;
 }
 
-- (NSString*)displayNameForFile:(NSURL*)inFileURL
+- (NSString *)defaultBrowserIdentifier
 {
-  NSString *name;
-  LSCopyDisplayNameForURL((CFURLRef)inFileURL, (CFStringRef *)&name);
-  return [name autorelease];
+    NSURL *httpsURL = [NSURL URLWithString:@"https://example.com"];
+    NSURL *appURL = [self URLForApplicationToOpenURL:httpsURL];
+    NSString *bundleID = [self identifierForBundle:appURL];
+    if (bundleID.length == 0) {
+        return @"com.apple.Safari";
+    }
+    return bundleID;
 }
 
-//
-// +osVersionString
-//
-// Returns the system version string from
-// /System/Library/CoreServices/SystemVersion.plist
-// (as recommended by Apple).
-//
-+ (NSString*)osVersionString
+- (NSURL *)defaultBrowserURL
 {
-  NSDictionary* versionInfo = [NSDictionary dictionaryWithContentsOfFile:@"/System/Library/CoreServices/SystemVersion.plist"];
-  return [versionInfo objectForKey:@"ProductVersion"];
+    NSString *defaultBundleId = [self defaultBrowserIdentifier];
+    if (defaultBundleId) {
+        return [self urlOfApplicationWithIdentifier:defaultBundleId];
+    }
+    return nil;
 }
 
-//
-// +systemVersion
-//
-// Returns the host's OS version as returned by the 'sysv' gestalt selector,
-// 10.x.y = 0x000010xy
-//
-+ (long)systemVersion
+- (void)setDefaultBrowserWithIdentifier:(NSString *)bundleID
 {
-  static long sSystemVersion = 0;
-  if (!sSystemVersion)
-    Gestalt(gestaltSystemVersion, &sSystemVersion);
-  return sSystemVersion;
+    NSURL *appURL = [self urlOfApplicationWithIdentifier:bundleID];
+    if (!appURL) {
+        NSLog(@"Can't locate application for bundle id %@", bundleID);
+        return;
+    }
+
+    [self setDefaultApplicationAtURL:appURL
+               toOpenURLsWithScheme:@"http"
+                  completionHandler:^(NSError *error) {
+        if (error) {
+            NSLog(@"Failed to set default http handler: %@", error);
+        }
+    }];
+    [self setDefaultApplicationAtURL:appURL
+               toOpenURLsWithScheme:@"https"
+                  completionHandler:^(NSError *error) {
+        if (error) {
+            NSLog(@"Failed to set default https handler: %@", error);
+        }
+    }];
+    [self setDefaultApplicationAtURL:appURL
+                  toOpenContentType:UTTypeHTML
+                  completionHandler:^(NSError *error) {
+        if (error) {
+            NSLog(@"Failed to set default HTML handler: %@", error);
+        }
+    }];
 }
 
-//
-// +isLeopardOrHigher
-//
-// returns YES if we're on 10.5 or better
-//
-+ (BOOL)isLeopardOrHigher
+- (NSURL *)urlOfApplicationWithIdentifier:(NSString *)bundleID
 {
-#if MAC_OS_X_VERSION_MIN_REQUIRED > MAC_OS_X_VERSION_10_4
-  return YES;
-#else
-  return [self systemVersion] >= 0x1050;
-#endif
+    if (bundleID.length == 0) {
+        return nil;
+    }
+    return [self URLForApplicationWithBundleIdentifier:bundleID];
 }
 
-//
-// +isLionOrHigher
-//
-// returns YES if we're on 10.7 or better
-//
-+ (BOOL)isLionOrHigher
+- (NSString *)identifierForBundle:(NSURL *)inBundleURL
 {
-  return [self systemVersion] >= 0x1070;
+    if (!inBundleURL) {
+        return nil;
+    }
+
+    NSBundle *tmpBundle = [NSBundle bundleWithURL:inBundleURL];
+    NSString *tmpBundleID = tmpBundle.bundleIdentifier;
+    if (tmpBundleID.length > 0) {
+        return tmpBundleID;
+    }
+    return nil;
 }
 
 @end

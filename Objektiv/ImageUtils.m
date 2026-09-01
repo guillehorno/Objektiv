@@ -16,13 +16,12 @@
 
 @implementation ImageUtils
 {
-@private
     NSCache *cache;
 }
 
-# pragma mark initialization
+#pragma mark initialization
 
-+(ImageUtils*) sharedInstance
++ (ImageUtils *)sharedInstance
 {
     DEFINE_SHARED_INSTANCE_USING_BLOCK(^{
         return [[self alloc] init];
@@ -38,137 +37,151 @@
     return self;
 }
 
-# pragma mark static methods
+#pragma mark static methods
 
-+ (NSImage*) statusBarIconForAppId: (NSString*) applicationIdentifier
-{
-    // Use [self statusBarIconForAppId] if we want to revert to monochrome icons
-    return [[self sharedInstance] menuIconForAppId:applicationIdentifier];
-}
-
-+ (NSImage*) menuIconForAppId: (NSString*) applicationIdentifier
++ (NSImage *)statusBarIconForAppId:(NSString *)applicationIdentifier
 {
     return [[self sharedInstance] menuIconForAppId:applicationIdentifier];
 }
 
-+ (NSImage*) fullSizeIconForAppId: (NSString*) applicationIdentifier
++ (NSImage *)menuIconForAppId:(NSString *)applicationIdentifier
 {
-    NSImage *image = [[[self sharedInstance] iconForAppIdentifier:applicationIdentifier] copy];
-    return image;
+    return [[self sharedInstance] menuIconForAppId:applicationIdentifier];
 }
 
-+ (NSImage*) fullSizeIconForAppId: (NSString*) applicationIdentifier withSize:(NSSize)size
++ (NSImage *)fullSizeIconForAppId:(NSString *)applicationIdentifier
+{
+    return [[[self sharedInstance] iconForAppIdentifier:applicationIdentifier] copy];
+}
+
++ (NSImage *)fullSizeIconForAppId:(NSString *)applicationIdentifier withSize:(NSSize)size
 {
     NSImage *image = [self fullSizeIconForAppId:applicationIdentifier];
     image.size = size;
     return image;
 }
 
-// Convert the B&W input image into the output tint
-// Used to add the 'checkmark' on the selected browser's icon
-+ (NSImage*) tintInputImage:(NSImage*)inputImage toColor:(NSColor*)outputColor
++ (NSImage *)tintInputImage:(NSImage *)inputImage toColor:(NSColor *)outputColor
 {
     CIColor *ciColor = [[CIColor alloc] initWithColor:outputColor];
-    CIImage *ciColorImage = [CIImage imageWithColor:(CIColor*)ciColor];
-    CIImage *ciInputImage = [self ciImageFromNSImate:inputImage];
+    CIImage *ciColorImage = [CIImage imageWithColor:ciColor];
+    CIImage *ciInputImage = [self ciImageFromNSImage:inputImage];
+    if (!ciInputImage) {
+        return inputImage;
+    }
 
     CIFilter *filter = [CIFilter filterWithName:@"CISourceInCompositing"];
     [filter setValue:ciColorImage forKey:@"inputImage"];
     [filter setValue:ciInputImage forKey:@"inputBackgroundImage"];
 
     CIImage *image = [filter valueForKey:@"outputImage"];
-    NSImage *output = [self imageFromCIImage:image];
-
-    return output;
+    return [self imageFromCIImage:image];
 }
 
-# pragma mark instance methods
+#pragma mark instance methods
 
-- (NSImage*) statusBarIconForAppId: (NSString*) applicationIdentifier
+- (NSImage *)statusBarIconForAppId:(NSString *)applicationIdentifier
 {
-    NSString *key = [@"status:" stringByAppendingString:applicationIdentifier];
+    NSString *key = [@"status:" stringByAppendingString:applicationIdentifier ?: @""];
     NSImage *icon = [cache objectForKey:key];
-    if (icon) return icon;
-    
-    icon = [ImageUtils resizeIcon:[ImageUtils destaurateIcon:
-                                   [self iconForAppIdentifier:applicationIdentifier]]];
-    [cache setObject:icon forKey:key];
+    if (icon) {
+        return icon;
+    }
+
+    icon = [ImageUtils resizeIcon:[ImageUtils desaturateIcon:[self iconForAppIdentifier:applicationIdentifier]]];
+    if (icon) {
+        [cache setObject:icon forKey:key];
+    }
     return icon;
 }
 
-- (NSImage*) menuIconForAppId: (NSString*) applicationIdentifier
+- (NSImage *)menuIconForAppId:(NSString *)applicationIdentifier
 {
-
-    NSString *key = [@"menu:" stringByAppendingString:applicationIdentifier];
+    NSString *key = [@"menu:" stringByAppendingString:applicationIdentifier ?: @""];
     NSImage *icon = [cache objectForKey:key];
-    if (icon) return icon;
+    if (icon) {
+        return icon;
+    }
 
     icon = [ImageUtils resizeIcon:[self iconForAppIdentifier:applicationIdentifier]];
-    [cache setObject:icon forKey:key];
+    if (icon) {
+        [cache setObject:icon forKey:key];
+    }
     return icon;
 }
 
-# pragma mark internal utility methods
+#pragma mark internal utility methods
 
-+ (NSImage*) resizeIcon: (NSImage*) icon
++ (NSImage *)resizeIcon:(NSImage *)icon
 {
+    if (!icon) {
+        return nil;
+    }
     icon = [icon copy];
-    icon.scalesWhenResized = YES;
     icon.size = CGSizeMake(StatusBarIconSize, StatusBarIconSize);
     return icon;
 }
 
-- (NSImage*) iconForAppIdentifier: (NSString*) applicationIdentifier
+- (NSImage *)iconForAppIdentifier:(NSString *)applicationIdentifier
 {
+    if (applicationIdentifier.length == 0) {
+        return nil;
+    }
+
     NSImage *icon = [cache objectForKey:applicationIdentifier];
-    if (icon)
-    {
+    if (icon) {
         return icon;
     }
-    
-    NSString *path = [[NSWorkspace sharedWorkspace] absolutePathForAppBundleWithIdentifier:applicationIdentifier];
-    icon = [[[NSWorkspace sharedWorkspace] iconForFile:path] copy];
-    [cache setObject:icon forKey:applicationIdentifier];
 
+    NSURL *appURL = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:applicationIdentifier];
+    if (!appURL) {
+        return nil;
+    }
+    icon = [[[NSWorkspace sharedWorkspace] iconForFile:appURL.path] copy];
+    if (icon) {
+        [cache setObject:icon forKey:applicationIdentifier];
+    }
     return icon;
 }
 
-+ (NSImage *) imageFromCIImage:(CIImage *)ciImage
++ (NSImage *)imageFromCIImage:(CIImage *)ciImage
 {
+    if (!ciImage) {
+        return nil;
+    }
     NSSize size = ciImage.extent.size;
     NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(size.width, size.height)];
     [image addRepresentation:[NSCIImageRep imageRepWithCIImage:ciImage]];
     return image;
 }
 
-+ (CIImage*) ciImageFromNSImate:(NSImage *)image
++ (CIImage *)ciImageFromNSImage:(NSImage *)image
 {
-    NSSize size = [image size];
-    [image lockFocus];
-    NSRect imageRect = NSMakeRect(0, 0, size.width, size.height);
-    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect: imageRect];
-    [image unlockFocus];
+    if (!image) {
+        return nil;
+    }
+    NSData *tiff = [image TIFFRepresentation];
+    if (!tiff) {
+        return nil;
+    }
+    NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithData:tiff];
+    if (!rep) {
+        return nil;
+    }
     return [[CIImage alloc] initWithBitmapImageRep:rep];
 }
 
-+ (NSImage*) destaurateIcon:(NSImage*)original
++ (NSImage *)desaturateIcon:(NSImage *)original
 {
-    NSImage *icon = [original copy];
-    NSSize size = [icon size];
-
-    [icon lockFocus];
-    NSRect imageRect = NSMakeRect(0, 0, size.width, size.height);
-    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect: imageRect];
-    [icon unlockFocus];
-
-    CIImage *image = [[CIImage alloc] initWithBitmapImageRep:rep];
+    CIImage *image = [self ciImageFromNSImage:original];
+    if (!image) {
+        return original;
+    }
     CIFilter *filter = [CIFilter filterWithName:@"CIColorControls"];
     [filter setValue:image forKey:@"inputImage"];
-    [filter setValue:[NSNumber numberWithInt:0] forKey:@"inputSaturation"];
-    [filter setValue:[NSNumber numberWithInt:1] forKey:@"inputContrast"];
-
+    [filter setValue:@0 forKey:@"inputSaturation"];
+    [filter setValue:@1 forKey:@"inputContrast"];
     return [self imageFromCIImage:[filter valueForKey:@"outputImage"]];
 }
-
 
 @end

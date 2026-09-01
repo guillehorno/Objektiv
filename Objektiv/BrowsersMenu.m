@@ -11,27 +11,23 @@
 #import "AppDelegate.h"
 #import "BrowserItem.h"
 #import "Browsers.h"
-#import <Sparkle/Sparkle.h>
 
 @implementation BrowsersMenu {
-    @private
-    NSWorkspace *sharedWorkspace;
     AppDelegate *appDelegate;
 }
 
--(id)init
+- (id)init
 {
     self = [super init];
     if (self) {
-        appDelegate = (AppDelegate*) [NSApplication sharedApplication].delegate;
-        sharedWorkspace = [NSWorkspace sharedWorkspace];
+        appDelegate = (AppDelegate *)[NSApplication sharedApplication].delegate;
         self.delegate = self;
         self.menuIsOpen = NO;
     }
     return self;
 }
 
-- (void) createMenu
+- (void)createMenu
 {
     NSLog(@"Create Menu");
     [self removeAllItems];
@@ -41,12 +37,9 @@
 
     NSLog(@"Browsers list: %@", browsers);
 
-    for (int i = 0, count = 1; i < browsers.count; i++)
-    {
+    for (int i = 0, count = 1; i < browsers.count; i++) {
         BrowserItem *browser = browsers[i];
 
-        // Hidden browsers will be present in a hidden menu
-        // that will only be made visible on pressing Option
         if (browser.hidden) {
             NSMenuItem *item = [self menuItemForBrowser:browser withHotkey:nil];
 
@@ -61,17 +54,16 @@
 
         NSMenuItem *item = [self menuItemForBrowser:browser withHotkey:[NSString stringWithFormat:@"%d", count]];
         item.action = @selector(selectABrowser:);
-        item.state = browser.isDefault;
+        item.state = browser.isDefault ? NSControlStateValueOn : NSControlStateValueOff;
 
         [self addItem:item];
 
-        // Create an alternate item used to hide the browser
         NSMenuItem *alternate = [item copy];
 
         alternate.target = [Browsers sharedInstance];
-        alternate.keyEquivalentModifierMask = NSAlternateKeyMask;
+        alternate.keyEquivalentModifierMask = NSEventModifierFlagOption;
         [alternate setAlternate:YES];
-        alternate.state = NSMixedState;
+        alternate.state = NSControlStateValueMixed;
         alternate.mixedStateImage = [NSImage imageNamed:NSImageNameRemoveTemplate];
         alternate.toolTip = [NSString stringWithFormat:NSLocalizedString(@"Hide %@", nil), browser.name];
 
@@ -88,16 +80,16 @@
     NSMenuItem *submenuAlt = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Hidden Items", nil)
                                                         action:nil keyEquivalent:@""];
     submenuAlt.submenu = hiddenMenu;
-    submenuAlt.keyEquivalentModifierMask = NSAlternateKeyMask;
+    submenuAlt.keyEquivalentModifierMask = NSEventModifierFlagOption;
     [submenuAlt setAlternate:YES];
     [self addItem:submenuAlt];
 
     [self addCommonItems];
 }
 
-# pragma mark - Internal methods
+#pragma mark - Internal methods
 
--(NSMenuItem*) menuItemForBrowser: (BrowserItem*) browser withHotkey:(NSString*) hotkey
+- (NSMenuItem *)menuItemForBrowser:(BrowserItem *)browser withHotkey:(NSString *)hotkey
 {
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:browser.name
                                                   action:nil
@@ -105,13 +97,13 @@
 
     item.target = appDelegate;
     item.image = [ImageUtils menuIconForAppId:browser.identifier];
-    item.state = NSOffState;
+    item.state = NSControlStateValueOff;
     item.representedObject = browser.identifier;
 
     return item;
 }
 
--(void) addCommonItems
+- (void)addCommonItems
 {
     [self addItem:[NSMenuItem separatorItem]];
 
@@ -136,12 +128,12 @@
 
 #pragma mark - NSMenuDelegate
 
--(void) menuDidClose:(NSMenu *) theMenu
+- (void)menuDidClose:(NSMenu *)theMenu
 {
     self.menuIsOpen = NO;
 }
 
--(void) menuWillOpen:(NSMenu *) theMenu
+- (void)menuWillOpen:(NSMenu *)theMenu
 {
     [appDelegate updateStatusBarIcon];
     self.menuIsOpen = YES;

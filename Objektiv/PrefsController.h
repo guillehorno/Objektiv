@@ -9,19 +9,17 @@
 #import <Cocoa/Cocoa.h>
 #import <MASShortcut/Shortcut.h>
 
-
 @interface PrefsController : NSWindowController
 
--(void) showPreferences;
+- (void)showPreferences;
 
-@property (assign) IBOutlet NSButton *startAtLogin;
-@property (assign) IBOutlet NSButton *autoHideIcon;
-@property (assign) IBOutlet NSButton *showNotifications;
-@property (assign) IBOutlet MASShortcutView *hotkeyRecorder;
+@property (weak) IBOutlet NSButton *startAtLogin;
+@property (weak) IBOutlet NSButton *autoHideIcon;
+@property (weak) IBOutlet NSButton *showNotifications;
+@property (weak) IBOutlet MASShortcutView *hotkeyRecorder;
 
-
-- (IBAction)toggleLoginItem: (id)sender;
-- (IBAction)toggleHideItem: (id)sender;
-- (IBAction)toggleShowNotifications: (id)sender;
+- (IBAction)toggleLoginItem:(id)sender;
+- (IBAction)toggleHideItem:(id)sender;
+- (IBAction)toggleShowNotifications:(id)sender;
 
 @end
